@@ -154,3 +154,10 @@ variable "function_docker_registry" {
   default     = null
   description = "Docker Registry to use for storing the function's Docker images. Allowed values are CONTAINER_REGISTRY (default) and ARTIFACT_REGISTRY."
 }
+
+variable "target_excluded_folders" {
+  description = "List of folder IDs (e.g., '1234567890') to exclude from the entire cleanup process."
+  type        = list(string)
+  default     = []
+}
+
