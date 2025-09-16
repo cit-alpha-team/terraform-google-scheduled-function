@@ -154,3 +154,9 @@ variable "function_docker_registry" {
   default     = null
   description = "Docker Registry to use for storing the function's Docker images. Allowed values are CONTAINER_REGISTRY (default) and ARTIFACT_REGISTRY."
 }
+
+variable "dry_run" {
+  description = "If true, the cleanup function will only log what it would delete without performing deletions."
+  type        = bool
+  default     = true
+}
