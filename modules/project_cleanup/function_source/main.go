@@ -67,6 +67,8 @@ const (
 	CleanUpBillingSinks           = "CLEAN_UP_BILLING_SINKS"
 	TargetBillingSinks            = "TARGET_BILLING_SINKS"
 	BillingSinksPageSize          = "BILLING_SINKS_PAGE_SIZE"
+	DryRunMode                    = "DRY_RUN"
+	CleanUpSharedVPC              = "CLEAN_UP_SHARED_VPC"
 )
 
 var (
@@ -87,6 +89,8 @@ var (
 	cleanUpBillingSinks    = getBoolFromEnv(CleanUpBillingSinks)
 	billingSinksPageSize   = getIntFromEnv(BillingSinksPageSize)
 	targetBillingSinks     = getRegexListFromEnv(TargetBillingSinks)
+	isDryRun               = getBoolFromEnv(DryRunMode)
+	cleanUpSharedVPC       = getBoolFromEnv(CleanUpSharedVPC)
 )
 
 type PubSubMessage struct {
@@ -423,6 +427,16 @@ func getFirewallPoliciesServiceOrTerminateExecution(ctx context.Context, client 
 	return computeService.FirewallPolicies
 }
 
+func getComputeServiceOrTerminateExecution(ctx context.Context, client *http.Client) *compute.Service {
+	logger.Println("Try to get Compute Service")
+	computeService, err := compute.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		logger.Fatalf("Failed to get Compute Service with error [%s], terminate execution", err.Error())
+	}
+	logger.Println("Got Compute Service")
+	return computeService
+}
+
 func initializeGoogleClient(ctx context.Context) *http.Client {
 	logger.Println("Try to initialize Google client")
 	client, err := google.DefaultClient(ctx, cloudresourcemanager.CloudPlatformScope)
@@ -445,6 +459,7 @@ func invoke(ctx context.Context) {
 	firewallPoliciesService := getFirewallPoliciesServiceOrTerminateExecution(ctx, client)
 	endpointService := getServiceManagementServiceOrTerminateExecution(ctx, client)
 	containerService := getContainerServiceOrTerminateExecution(ctx)
+	computeService := getComputeServiceOrTerminateExecution(ctx, client)
 
 	removeLien := func(name string) {
 		logger.Printf("Try to remove lien [%s]", name)
@@ -709,7 +724,52 @@ func invoke(ctx context.Context) {
 		}
 	}
 
+	cleanUpSharedVPC := func(projectId string) {
+		if !cleanUpSharedVPC {
+			return
+		}
+		logger.Printf("Checking for Shared VPC (XPN) resources in project [%s]", projectId)
+
+		xpnResources, err := computeService.Projects.GetXpnResources(projectId).Do()
+		if err != nil {
+			logger.Printf("Could not get XPN resources for project [%s] (may not be a host project): %v", projectId, err)
+		} else if xpnResources != nil && len(xpnResources.Resources) > 0 {
+			for _, resource := range xpnResources.Resources {
+				logger.Printf("Disabling XPN resource [%s] for project [%s]", resource.Id, projectId)
+				if isDryRun {
+					logger.Printf("[DRY RUN] Would disable XPN resource for service project [%s]", resource.Id)
+					continue
+				}
+				op, err := computeService.Projects.DisableXpnResource(projectId, &compute.ProjectsDisableXpnResourceRequest{
+					XpnResource: &compute.XpnResourceId{
+						Id:   resource.Id,
+						Type: "PROJECT",
+					},
+				}).Do()
+
+				if err != nil {
+					logger.Printf("Error disabling XPN resource for service project [%s]: %v", resource.Id, err)
+				} else {
+					logger.Printf("Successfully initiated disabling of XPN resource for service project [%s]. Operation: %s", resource.Id, op.Name)
+				}
+			}
+		}
+
+		logger.Printf("Disabling project [%s] as an XPN host", projectId)
+		if isDryRun {
+			logger.Printf("[DRY RUN] Would disable XPN host for project [%s]", projectId)
+			return
+		}
+		op, err := computeService.Projects.DisableXpnHost(projectId).Do()
+		if err != nil {
+			logger.Printf("Could not disable XPN host for project [%s] (may not be a host): %v", projectId, err)
+		} else {
+			logger.Printf("Successfully initiated disabling of XPN host for project [%s]. Operation: %s", projectId, op.Name)
+		}
+	}
+
 	removeProjectWithLiens := func(projectId string) {
+		cleanUpSharedVPC(projectId)
 		logger.Printf("Try to get all liens for the project [%s]", projectId)
 		parent := fmt.Sprintf("projects/%s", projectId)
 		req := cloudResourceManagerService.Liens.List().Parent(parent)
