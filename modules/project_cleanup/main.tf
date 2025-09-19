@@ -81,5 +81,6 @@ module "scheduled_project_cleaner" {
     DRY_RUN                           = var.dry_run
     CLEAN_UP_EMPTY_PERIMETERS         = var.clean_up_empty_perimeters
     ACCESS_POLICY_NAME                = var.access_policy_name
+    MIN_PERIMETER_AGE_HOURS           = var.min_perimeter_age_hours
   }
 }

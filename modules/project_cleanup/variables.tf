@@ -172,3 +172,9 @@ variable "access_policy_name" {
   type        = string
   default     = ""
 }
+
+variable "min_perimeter_age_hours" {
+  description = "The minimum age of a Service Perimeter in hours. Perimeters newer than this will not be considered for cleanup."
+  type        = number
+  default     = 24
+}

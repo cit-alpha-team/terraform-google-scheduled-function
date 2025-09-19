@@ -71,6 +71,7 @@ const (
 	DryRunMode                    = "DRY_RUN"
 	CleanUpEmptyPerimeters        = "CLEAN_UP_EMPTY_PERIMETERS"
 	AccessPolicyName              = "ACCESS_POLICY_NAME"
+	MinPerimeterAgeHours          = "MIN_PERIMETER_AGE_HOURS"
 )
 
 var (
@@ -94,6 +95,7 @@ var (
 	isDryRun               = getBoolFromEnv(DryRunMode)
 	cleanUpEmptyPerimeters = getBoolFromEnv(CleanUpEmptyPerimeters)
 	accessPolicyName       = getAccessPolicyNameOrTerminateExecution()
+	minPerimeterAgeCutoff  = getOldTime(getIntFromEnv(MinPerimeterAgeHours) * 60 * 60)
 )
 
 type PubSubMessage struct {
@@ -866,6 +868,17 @@ func invoke(ctx context.Context) {
 				continue
 			}
 
+			perimeterCreatedAt, err := time.Parse(time.RFC3339, perimeter.CreateTime)
+			if err != nil {
+				logger.Printf("Failed to parse CreateTime for perimeter [%s], skipping it. Error: %v", perimeter.Name, err)
+				continue
+			}
+
+			if perimeterCreatedAt.After(minPerimeterAgeCutoff) {
+				logger.Printf("Perimeter [%s] was created recently, skipping check.", perimeter.Name)
+				continue
+			}
+
 			status := perimeter.Status
 			spec := perimeter.Spec
 
@@ -875,7 +888,7 @@ func invoke(ctx context.Context) {
 			specResourcesGone := spec != nil && resourcesDoNotExist(spec.Resources)
 
 			if (statusIsEmpty || statusResourcesGone) && (specIsEmpty || specResourcesGone) {
-				logger.Printf("Perimeter [%s] is empty or its resources no longer exist. Scheduling for deletion.", perimeter.Name)
+				logger.Printf("Perimeter [%s] is empty and old enough to be considered for deletion.", perimeter.Name)
 				if isDryRun {
 					logger.Printf("[DRY RUN] Would delete Service Perimeter [%s]", perimeter.Name)
 					continue
