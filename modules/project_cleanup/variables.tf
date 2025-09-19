@@ -154,3 +154,21 @@ variable "function_docker_registry" {
   default     = null
   description = "Docker Registry to use for storing the function's Docker images. Allowed values are CONTAINER_REGISTRY (default) and ARTIFACT_REGISTRY."
 }
+
+variable "dry_run" {
+  description = "If true, the cleanup function will only log what it would delete without performing deletions."
+  type        = bool
+  default     = true
+}
+
+variable "clean_up_empty_perimeters" {
+  description = "If true, the function will clean up empty or obsolete Service Perimeters."
+  type        = bool
+  default     = false
+}
+
+variable "access_policy_name" {
+  description = "The name of the Access Policy to clean resources from, in the format 'accessPolicies/123456789'."
+  type        = string
+  default     = ""
+}
