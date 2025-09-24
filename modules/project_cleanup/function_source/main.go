@@ -67,6 +67,7 @@ const (
 	CleanUpBillingSinks           = "CLEAN_UP_BILLING_SINKS"
 	TargetBillingSinks            = "TARGET_BILLING_SINKS"
 	BillingSinksPageSize          = "BILLING_SINKS_PAGE_SIZE"
+	DryRunMode                    = "DRY_RUN"
 	TargetExcludedFolders         = "TARGET_EXCLUDED_FOLDERS"
 )
 
@@ -88,6 +89,7 @@ var (
 	cleanUpBillingSinks    = getBoolFromEnv(CleanUpBillingSinks)
 	billingSinksPageSize   = getIntFromEnv(BillingSinksPageSize)
 	targetBillingSinks     = getRegexListFromEnv(TargetBillingSinks)
+	isDryRun               = getBoolFromEnv(DryRunMode)
 	excludedFoldersMap     = getListFromEnvAsMap(TargetExcludedFolders)
 )
 
@@ -642,6 +644,10 @@ func invoke(ctx context.Context) {
 	}
 
 	removeProjectById := func(projectId string) error {
+		if isDryRun {
+			logger.Printf("[DRY RUN] Would request deletion for project: %s", projectId)
+			return nil
+		}
 		_, err := cloudResourceManagerService.Projects.Delete(projectId).Context(ctx).Do()
 		return err
 	}
@@ -776,6 +782,10 @@ func invoke(ctx context.Context) {
 		folderId := folder.Name
 		removeFirewallPolicies(folderId)
 		logger.Printf("Try to delete folder with id [%s]", folderId)
+		if dryRun {
+			logger.Printf("[DRY RUN] Would delete folder with ID: %s", folderId)
+			return
+		}
 		_, err := folderService.Delete(folderId).Do()
 		if err != nil {
 			logger.Printf("Failed to delete folder [%s], error [%s]", folderId, err.Error())

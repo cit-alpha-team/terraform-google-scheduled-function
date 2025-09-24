@@ -155,6 +155,11 @@ variable "function_docker_registry" {
   description = "Docker Registry to use for storing the function's Docker images. Allowed values are CONTAINER_REGISTRY (default) and ARTIFACT_REGISTRY."
 }
 
+variable "dry_run" {
+  description = "If set to true, the function will only log the actions it would take without performing any deletions."
+  type        = bool
+  default     = true
+}
 variable "target_excluded_folders" {
   description = "List of folder IDs (e.g., '1234567890') to exclude from the entire cleanup process."
   type        = list(string)
