@@ -782,7 +782,7 @@ func invoke(ctx context.Context) {
 		folderId := folder.Name
 		removeFirewallPolicies(folderId)
 		logger.Printf("Try to delete folder with id [%s]", folderId)
-		if dryRun {
+		if isDryRun {
 			logger.Printf("[DRY RUN] Would delete folder with ID: %s", folderId)
 			return
 		}
