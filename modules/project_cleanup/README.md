@@ -50,6 +50,8 @@ The following services must be enabled on the project housing the cleanup functi
 | target\_tag\_name | The name of a tag to filter GCP projects on for consideration by the cleanup utility (legacy, use `target_included_labels` map instead). | `string` | `""` | no |
 | target\_tag\_value | The value of a tag to filter GCP projects on for consideration by the cleanup utility (legacy, use `target_included_labels` map instead). | `string` | `""` | no |
 | topic\_name | Name of pubsub topic connecting the scheduled projects cleanup function | `string` | `"pubsub_scheduled_project_cleaner"` | no |
+| dry\_run | If set to true, the function will only log the actions it would take without performing any deletions. | `bool` | `true` | no |
+| target\_excluded\_folders | List of folder IDs (e.g., '1234567890') to exclude from the entire cleanup process. | `list(string)` | `[]` | no |
 
 ## Outputs
 
