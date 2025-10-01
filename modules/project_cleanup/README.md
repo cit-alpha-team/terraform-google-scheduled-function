@@ -26,11 +26,13 @@ The following services must be enabled on the project housing the cleanup functi
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| access_policy_name           | The parent access policy from which Access Levels will be cleaned. Required if `clean_up_stale_access_levels` is true. | `string` | `""` | no |
 | billing\_account | Billing Account used to provision resources. | `string` | `""` | no |
 | clean\_up\_billing\_sinks | Clean up Billing Account Sinks. | `bool` | `false` | no |
 | clean\_up\_org\_level\_cai\_feeds | Clean up organization level Cloud Asset Inventory Feeds. | `bool` | `false` | no |
 | clean\_up\_org\_level\_scc\_notifications | Clean up organization level Security Command Center notifications. | `bool` | `false` | no |
 | clean\_up\_org\_level\_tag\_keys | Clean up organization level Tag Keys. | `bool` | `false` | no |
+| clean_up_stale_access_levels | If true, the function will clean up stale Access Levels based on their configuration and usage. | `bool` | `false` | no |
 | function\_docker\_registry | Docker Registry to use for storing the function's Docker images. Allowed values are CONTAINER\_REGISTRY (default) and ARTIFACT\_REGISTRY. | `string` | `null` | no |
 | function\_timeout\_s | The amount of time in seconds allotted for the execution of the function. | `number` | `500` | no |
 | job\_schedule | Cleaner function run frequency, in cron syntax | `string` | `"*/5 * * * *"` | no |
