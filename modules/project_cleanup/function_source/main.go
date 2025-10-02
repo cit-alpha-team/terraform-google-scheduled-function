@@ -57,7 +57,7 @@ const (
 	TargetIncludedSCCNotfis       = "TARGET_INCLUDED_SCC_NOTIFICATIONS"
 	TargetFolderId                = "TARGET_FOLDER_ID"
 	TargetOrganizationId          = "TARGET_ORGANIZATION_ID"
-	MaxProjectAgeHours            = "MAX_PROJECT_AGE_HOURS"
+	MaxResourceAgeHours           = "MAX_RESOURCE_AGE_HOURS"
 	targetFolderRegexp            = `^[0-9]+$`
 	targetOrganizationRegexp      = `^[0-9]+$`
 	billingAccountRegex           = `^[0-9A-Z][-0-9A-Z]{18}[0-9A-Z]$`
@@ -71,7 +71,6 @@ const (
 	DryRunMode                    = "DRY_RUN"
 	CleanUpEmptyPerimeters        = "CLEAN_UP_EMPTY_PERIMETERS"
 	AccessPolicyName              = "ACCESS_POLICY_NAME"
-	MinPerimeterAgeHours          = "MIN_PERIMETER_AGE_HOURS"
 )
 
 var (
@@ -82,7 +81,7 @@ var (
 	cleanUpSCCNotfi        = getBoolFromEnv(CleanUpSCCNotfi)
 	excludedTagKeysList    = getTagKeysListFromEnv(TargetExcludedTagKeys)
 	includedSCCNotfisList  = getRegexListFromEnv(TargetIncludedSCCNotfis)
-	resourceCreationCutoff = getOldTime(getIntFromEnv(MaxProjectAgeHours) * 60 * 60)
+	resourceCreationCutoff = getOldTime(getIntFromEnv(MaxResourceAgeHours) * 60 * 60)
 	rootFolderId           = getCorrectFolderIdOrTerminateExecution()
 	organizationId         = getCorrectOrganizationIdOrTerminateExecution()
 	sccPageSize            = int32(getIntFromEnv(SCCNotificationsPageSize))
@@ -95,7 +94,6 @@ var (
 	isDryRun               = getBoolFromEnv(DryRunMode)
 	cleanUpEmptyPerimeters = getBoolFromEnv(CleanUpEmptyPerimeters)
 	accessPolicyName       = getAccessPolicyNameOrTerminateExecution()
-	minPerimeterAgeCutoff  = getOldTime(getIntFromEnv(MinPerimeterAgeHours) * 60 * 60)
 )
 
 type PubSubMessage struct {
@@ -874,8 +872,8 @@ func invoke(ctx context.Context) {
 				continue
 			}
 
-			if perimeterCreatedAt.After(minPerimeterAgeCutoff) {
-				logger.Printf("Perimeter [%s] was created recently, skipping check.", perimeter.Name)
+			if !perimeterCreatedAt.Before(resourceCreationCutoff) {
+				logger.Printf("Perimeter [%s] is not older than MAX_RESOURCE_AGE_HOURS, skipping.", perimeter.Name)
 				continue
 			}
 

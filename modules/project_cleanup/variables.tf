@@ -71,9 +71,9 @@ variable "target_tag_value" {
   default     = ""
 }
 
-variable "max_project_age_in_hours" {
+variable "max_resource_age_in_hours" {
   type        = number
-  description = "The maximum number of hours that a GCP project, selected by `target_tag_name` and `target_tag_value`, can exist"
+  description = "The maximum age in hours that a resource (e.g., project, folder, perimeter) can exist before being considered for cleanup."
   default     = 6
 }
 
@@ -173,8 +173,3 @@ variable "access_policy_name" {
   default     = ""
 }
 
-variable "min_perimeter_age_hours" {
-  description = "The minimum age of a Service Perimeter in hours. Perimeters newer than this will not be considered for cleanup."
-  type        = number
-  default     = 24
-}

@@ -36,7 +36,7 @@ The following services must be enabled on the project housing the cleanup functi
 | job\_schedule | Cleaner function run frequency, in cron syntax | `string` | `"*/5 * * * *"` | no |
 | list\_billing\_sinks\_page\_size | The maximum number of Billing Account Log Sinks to return in the call to `BillingAccountsSinksService.List` service. | `number` | `200` | no |
 | list\_scc\_notifications\_page\_size | The maximum number of notification configs to return in the call to `ListNotificationConfigs` service. The minimun value is 1 and the maximum value is 1000. | `number` | `500` | no |
-| max\_project\_age\_in\_hours | The maximum number of hours that a GCP project, selected by `target_tag_name` and `target_tag_value`, can exist | `number` | `6` | no |
+| max\_resource\_age\_in\_hours | The maximum age in hours that a resource (e.g., project, folder, perimeter) can exist before being considered for cleanup. | `number` | `6` | no |
 | organization\_id | The organization ID whose projects to clean up | `string` | n/a | yes |
 | project\_id | The project ID to host the scheduled function in | `string` | n/a | yes |
 | region | The region the project is in (App Engine specific) | `string` | n/a | yes |
