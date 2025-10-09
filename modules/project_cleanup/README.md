@@ -1,6 +1,12 @@
 # Old Project Cleanup Utility Module
 
-This module schedules a job to clean up GCP projects older than a specified length of time, that match a particular labels. This job runs every 5 minutes via Google Cloud Scheduled Functions. Please see the [utility's readme](./function_source/README.md) for more information as to its operation and configuration.
+This module schedules a job to clean up GCP resources based on specific criteria, running every 5 minutes via Google Cloud Scheduled Functions. Its main capabilities include:
+
+* **Project Deletion:** Deletes GCP projects that are older than a specified age and match a particular set of labels.
+* **Organization-Level Cleanup:** Cleans up organization-level resources that are no longer in use, such as Tag Keys, Security Command Center notifications, and Cloud Asset Inventory feeds.
+* **Billing Sink Cleanup:** Removes Billing Account Log Sinks that match certain criteria.
+* **Shared VPC Cleanup:** Disables Shared VPC host and resource associations for projects before deletion.
+
 
 ## Requirements
 
@@ -31,6 +37,8 @@ The following services must be enabled on the project housing the cleanup functi
 | clean\_up\_org\_level\_cai\_feeds | Clean up organization level Cloud Asset Inventory Feeds. | `bool` | `false` | no |
 | clean\_up\_org\_level\_scc\_notifications | Clean up organization level Security Command Center notifications. | `bool` | `false` | no |
 | clean\_up\_org\_level\_tag\_keys | Clean up organization level Tag Keys. | `bool` | `false` | no |
+| clean\_up\_shared\_vpc | If true, the function will disable Shared VPC host and resource associations for projects before deletion. | `bool` | `false` | no |
+| dry\_run | If true, the cleanup function will only log what it would delete without performing deletions. | `bool` | `true` | no |
 | function\_docker\_registry | Docker Registry to use for storing the function's Docker images. Allowed values are CONTAINER\_REGISTRY (default) and ARTIFACT\_REGISTRY. | `string` | `null` | no |
 | function\_timeout\_s | The amount of time in seconds allotted for the execution of the function. | `number` | `500` | no |
 | job\_schedule | Cleaner function run frequency, in cron syntax | `string` | `"*/5 * * * *"` | no |
