@@ -37,6 +37,7 @@ resource "google_organization_iam_member" "main" {
     "roles/cloudasset.owner",
     "roles/securitycenter.notificationConfigEditor",
     "roles/logging.configWriter",
+    "roles/accesscontextmanager.policyEditor",
   ])
 
   member = "serviceAccount:${google_service_account.project_cleaner_function.email}"
@@ -81,5 +82,6 @@ module "scheduled_project_cleaner" {
     DRY_RUN                           = var.dry_run
     CLEAN_UP_EMPTY_PERIMETERS         = var.clean_up_empty_perimeters
     ACCESS_POLICY_NAME                = var.access_policy_name
+    PERIMETER_CLEANUP_FLAGS           = jsonencode(var.perimeter_cleanup_flags)
   }
 }

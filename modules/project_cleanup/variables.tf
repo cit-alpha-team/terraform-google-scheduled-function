@@ -173,3 +173,17 @@ variable "access_policy_name" {
   default     = ""
 }
 
+variable "perimeter_cleanup_flags" {
+  description = "A list of string flags used to identify test perimeters for cleanup. The function will look for these flags in the perimeter's description field."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for flag in var.perimeter_cleanup_flags : length(regexall("_", flag)) == 0
+    ])
+    error_message = "Flags in perimeter_cleanup_flags must not contain the '_' (underscore) character."
+  }
+}
+
+

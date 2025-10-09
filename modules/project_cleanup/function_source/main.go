@@ -71,6 +71,7 @@ const (
 	DryRunMode                    = "DRY_RUN"
 	CleanUpEmptyPerimeters        = "CLEAN_UP_EMPTY_PERIMETERS"
 	AccessPolicyName              = "ACCESS_POLICY_NAME"
+	PERIMETER_CLEANUP_FLAGS       = "PERIMETER_CLEANUP_FLAGS"
 )
 
 var (
@@ -94,6 +95,7 @@ var (
 	isDryRun               = getBoolFromEnv(DryRunMode)
 	cleanUpEmptyPerimeters = getBoolFromEnv(CleanUpEmptyPerimeters)
 	accessPolicyName       = getAccessPolicyNameOrTerminateExecution()
+	perimeterCleanupFlags  = getListFromEnv(PERIMETER_CLEANUP_FLAGS)
 )
 
 type PubSubMessage struct {
@@ -459,6 +461,23 @@ func getProjectsV3ServiceOrTerminateExecution(ctx context.Context, client *http.
 	}
 	logger.Println("Got Cloud Resource Manager v3 Projects Service")
 	return crmService.Projects
+}
+
+func getListFromEnv(envVariableName string) []string {
+	envVar := os.Getenv(envVariableName)
+	logger.Printf("Try to get list from [%s]", envVariableName)
+	if envVar == "" {
+		logger.Printf("No value for [%s] list provided.", envVariableName)
+		return nil
+	}
+	var stringList []string
+	err := json.Unmarshal([]byte(envVar), &stringList)
+	if err != nil {
+		logger.Printf("Failed to get list from [%s] env variable, error [%s]", envVariableName, err.Error())
+	} else {
+		logger.Printf("Got list [%s] from [%s] env variable", stringList, envVariableName)
+	}
+	return stringList
 }
 
 func initializeGoogleClient(ctx context.Context) *http.Client {
@@ -855,47 +874,55 @@ func invoke(ctx context.Context) {
 
 	cleanEmptyPerimeters := func() {
 		logger.Println("Starting cleanup of empty Service Perimeters")
-		perimeters, err := accessContextManagerService.AccessPolicies.ServicePerimeters.List(accessPolicyName).Do()
+		perimeters, err := accessContextManagerService.AccessPolicies.ServicePerimeters.List("accessPolicies/" + accessPolicyName).Do()
 		if err != nil {
 			logger.Printf("Failed to list Service Perimeters: %v", err)
 			return
 		}
-
 		for _, perimeter := range perimeters.ServicePerimeters {
 			if perimeter.PerimeterType == "PERIMETER_TYPE_BRIDGE" {
 				continue
 			}
-
-			perimeterCreatedAt, err := time.Parse(time.RFC3339, perimeter.CreateTime)
+			var matchedFlag string
+			for _, flag := range perimeterCleanupFlags {
+				if strings.HasPrefix(perimeter.Description, flag+"_") {
+					matchedFlag = flag
+					break
+				}
+			}
+			if matchedFlag == "" {
+				logger.Printf("Perimeter [%s] does not have a cleanup flag in its description, skipping.", perimeter.Name)
+				continue
+			}
+			timestampStr := strings.TrimPrefix(perimeter.Description, matchedFlag+"_")
+			perimeterCreatedAt, err := time.Parse(time.RFC3339, timestampStr)
 			if err != nil {
-				logger.Printf("Failed to parse CreateTime for perimeter [%s], skipping it. Error: %v", perimeter.Name, err)
+				logger.Printf("Failed to parse timestamp from description for perimeter [%s], skipping. Error: %v", perimeter.Name, err)
 				continue
 			}
-
 			if !perimeterCreatedAt.Before(resourceCreationCutoff) {
-				logger.Printf("Perimeter [%s] is not older than MAX_RESOURCE_AGE_HOURS, skipping.", perimeter.Name)
+				logger.Printf("Perimeter [%s] is targeted for cleanup but is not older than MAX_RESOURCE_AGE_HOURS, skipping.", perimeter.Name)
+				logger.Printf("Perimeter age found: [%s] .", perimeterCreatedAt)
 				continue
 			}
-
 			status := perimeter.Status
 			spec := perimeter.Spec
-
 			statusIsEmpty := status == nil || (len(status.AccessLevels) == 0 && len(status.Resources) == 0)
 			specIsEmpty := spec == nil || (len(spec.AccessLevels) == 0 && len(spec.Resources) == 0)
 			statusResourcesGone := status != nil && resourcesDoNotExist(status.Resources)
 			specResourcesGone := spec != nil && resourcesDoNotExist(spec.Resources)
 
 			if (statusIsEmpty || statusResourcesGone) && (specIsEmpty || specResourcesGone) {
-				logger.Printf("Perimeter [%s] is empty and old enough to be considered for deletion.", perimeter.Name)
+				logger.Printf("Perimeter [%s] is targeted, old enough, and empty. Considering for deletion.", perimeter.Name)
 				if isDryRun {
 					logger.Printf("[DRY RUN] Would delete Service Perimeter [%s]", perimeter.Name)
-					continue
-				}
-				_, err := accessContextManagerService.AccessPolicies.ServicePerimeters.Delete(perimeter.Name).Do()
-				if err != nil {
-					logger.Printf("Error deleting Service Perimeter [%s]: %v", perimeter.Name, err)
 				} else {
-					logger.Printf("Successfully deleted Service Perimeter [%s]", perimeter.Name)
+					_, err := accessContextManagerService.AccessPolicies.ServicePerimeters.Delete(perimeter.Name).Do()
+					if err != nil {
+						logger.Printf("Error deleting Service Perimeter [%s]: %v", perimeter.Name, err)
+					} else {
+						logger.Printf("Successfully deleted Service Perimeter [%s]", perimeter.Name)
+					}
 				}
 			}
 		}
