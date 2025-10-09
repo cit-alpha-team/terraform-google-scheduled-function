@@ -35,6 +35,7 @@ import (
 	"cloud.google.com/go/securitycenter/apiv1/securitycenterpb"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/accesscontextmanager/v1"
 	"google.golang.org/api/cloudresourcemanager/v1"
 	cloudresourcemanager2 "google.golang.org/api/cloudresourcemanager/v2"
 	cloudresourcemanager3 "google.golang.org/api/cloudresourcemanager/v3"
@@ -67,26 +68,32 @@ const (
 	CleanUpBillingSinks           = "CLEAN_UP_BILLING_SINKS"
 	TargetBillingSinks            = "TARGET_BILLING_SINKS"
 	BillingSinksPageSize          = "BILLING_SINKS_PAGE_SIZE"
+	DryRunMode                    = "DRY_RUN"
+	CleanUpStaleAccessLevels      = "CLEAN_UP_STALE_ACCESS_LEVELS"
+	AccessPolicyName              = "ACCESS_POLICY_NAME"
 )
 
 var (
-	logger                 = log.New(os.Stdout, "", 0)
-	excludedLabelsMap      = getLabelsMapFromEnv(TargetExcludedLabels)
-	includedLabelsMap      = getLabelsMapFromEnv(TargetIncludedLabels)
-	cleanUpTagKeys         = getBoolFromEnv(CleanUpTagKeys)
-	cleanUpSCCNotfi        = getBoolFromEnv(CleanUpSCCNotfi)
-	excludedTagKeysList    = getTagKeysListFromEnv(TargetExcludedTagKeys)
-	includedSCCNotfisList  = getRegexListFromEnv(TargetIncludedSCCNotfis)
-	resourceCreationCutoff = getOldTime(getIntFromEnv(MaxProjectAgeHours) * 60 * 60)
-	rootFolderId           = getCorrectFolderIdOrTerminateExecution()
-	organizationId         = getCorrectOrganizationIdOrTerminateExecution()
-	sccPageSize            = int32(getIntFromEnv(SCCNotificationsPageSize))
-	cleanUpCaiFeeds        = getBoolFromEnv(CleanUpCaiFeeds)
-	includedFeedsList      = getRegexListFromEnv(TargetIncludedFeeds)
-	billingAccount         = getBillingAccountOrTerminateExecution()
-	cleanUpBillingSinks    = getBoolFromEnv(CleanUpBillingSinks)
-	billingSinksPageSize   = getIntFromEnv(BillingSinksPageSize)
-	targetBillingSinks     = getRegexListFromEnv(TargetBillingSinks)
+	logger                   = log.New(os.Stdout, "", 0)
+	excludedLabelsMap        = getLabelsMapFromEnv(TargetExcludedLabels)
+	includedLabelsMap        = getLabelsMapFromEnv(TargetIncludedLabels)
+	cleanUpTagKeys           = getBoolFromEnv(CleanUpTagKeys)
+	cleanUpSCCNotfi          = getBoolFromEnv(CleanUpSCCNotfi)
+	excludedTagKeysList      = getTagKeysListFromEnv(TargetExcludedTagKeys)
+	includedSCCNotfisList    = getRegexListFromEnv(TargetIncludedSCCNotfis)
+	resourceCreationCutoff   = getOldTime(getIntFromEnv(MaxProjectAgeHours) * 60 * 60)
+	rootFolderId             = getCorrectFolderIdOrTerminateExecution()
+	organizationId           = getCorrectOrganizationIdOrTerminateExecution()
+	sccPageSize              = int32(getIntFromEnv(SCCNotificationsPageSize))
+	cleanUpCaiFeeds          = getBoolFromEnv(CleanUpCaiFeeds)
+	includedFeedsList        = getRegexListFromEnv(TargetIncludedFeeds)
+	billingAccount           = getBillingAccountOrTerminateExecution()
+	cleanUpBillingSinks      = getBoolFromEnv(CleanUpBillingSinks)
+	billingSinksPageSize     = getIntFromEnv(BillingSinksPageSize)
+	targetBillingSinks       = getRegexListFromEnv(TargetBillingSinks)
+	isDryRun                 = getBoolFromEnv(DryRunMode)
+	cleanUpStaleAccessLevels = getBoolFromEnv(CleanUpStaleAccessLevels)
+	accessPolicyName         = getAccessPolicyNameOrTerminateExecution()
 )
 
 type PubSubMessage struct {
@@ -423,6 +430,27 @@ func getFirewallPoliciesServiceOrTerminateExecution(ctx context.Context, client 
 	return computeService.FirewallPolicies
 }
 
+func getAccessPolicyNameOrTerminateExecution() string {
+	if !getBoolFromEnv(CleanUpStaleAccessLevels) {
+		return ""
+	}
+	policyName := os.Getenv(AccessPolicyName)
+	if policyName == "" {
+		logger.Fatalf("If Access Level cleanup is enabled, Access Policy Name variable [%s] must be set.", AccessPolicyName)
+	}
+	return policyName
+}
+
+func getAccessContextManagerServiceOrTerminateExecution(ctx context.Context, client *http.Client) *accesscontextmanager.Service {
+	logger.Println("Try to get Access Context Manager Service")
+	service, err := accesscontextmanager.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		logger.Fatalf("Failed to get Access Context Manager Service with error [%s], terminate execution", err.Error())
+	}
+	logger.Println("Got Access Context Manager Service")
+	return service
+}
+
 func initializeGoogleClient(ctx context.Context) *http.Client {
 	logger.Println("Try to initialize Google client")
 	client, err := google.DefaultClient(ctx, cloudresourcemanager.CloudPlatformScope)
@@ -445,6 +473,7 @@ func invoke(ctx context.Context) {
 	firewallPoliciesService := getFirewallPoliciesServiceOrTerminateExecution(ctx, client)
 	endpointService := getServiceManagementServiceOrTerminateExecution(ctx, client)
 	containerService := getContainerServiceOrTerminateExecution(ctx)
+	accessContextManagerService := getAccessContextManagerServiceOrTerminateExecution(ctx, client)
 
 	removeLien := func(name string) {
 		logger.Printf("Try to remove lien [%s]", name)
@@ -779,6 +808,84 @@ func invoke(ctx context.Context) {
 		}
 	}
 
+	cleanStaleAccessLevels := func() {
+		logger.Println("Starting cleanup of stale Access Levels")
+		perimetersResponse, err := accessContextManagerService.AccessPolicies.ServicePerimeters.List(accessPolicyName).Do()
+		if err != nil {
+			logger.Printf("Failed to list Service Perimeters for stale access level check: %v", err)
+			return
+		}
+
+		accessLevelsResponse, err := accessContextManagerService.AccessPolicies.AccessLevels.List(accessPolicyName).Do()
+		if err != nil {
+			logger.Printf("Failed to list Access Levels: %v", err)
+			return
+		}
+
+		for _, level := range accessLevelsResponse.AccessLevels {
+			hasNoMembers := false
+			if level.Basic != nil {
+				if len(level.Basic.Conditions) == 0 {
+					hasNoMembers = true
+				} else {
+					allConditionsEmpty := true
+					for _, condition := range level.Basic.Conditions {
+						if len(condition.Members) > 0 {
+							allConditionsEmpty = false
+							break
+						}
+					}
+					hasNoMembers = allConditionsEmpty
+				}
+			}
+
+			isNotInUse := true
+			for _, perimeter := range perimetersResponse.ServicePerimeters {
+				if perimeter.Status != nil {
+					for _, levelName := range perimeter.Status.AccessLevels {
+						if levelName == level.Name {
+							isNotInUse = false
+							break
+						}
+					}
+				}
+				if !isNotInUse {
+					break
+				}
+				if perimeter.Spec != nil {
+					for _, levelName := range perimeter.Spec.AccessLevels {
+						if levelName == level.Name {
+							isNotInUse = false
+							break
+						}
+					}
+				}
+				if !isNotInUse {
+					break
+				}
+			}
+
+			if hasNoMembers || isNotInUse {
+				logReason := "it has no members"
+				if isNotInUse {
+					logReason = "it is not in use by any Service Perimeter"
+				}
+				logger.Printf("Access Level [%s] is stale because %s. Scheduling for deletion.", level.Name, logReason)
+
+				if isDryRun {
+					logger.Printf("[DRY RUN] Would delete Access Level [%s]", level.Name)
+					continue
+				}
+				_, err := accessContextManagerService.AccessPolicies.AccessLevels.Delete(level.Name).Do()
+				if err != nil {
+					logger.Printf("Error deleting Access Level [%s]: %v", level.Name, err)
+				} else {
+					logger.Printf("Successfully deleted Access Level [%s]", level.Name)
+				}
+			}
+		}
+	}
+
 	rootFolderId := fmt.Sprintf("folders/%s", rootFolderId)
 	rootFolder, err := folderService.Get(rootFolderId).Do()
 	if err != nil {
@@ -804,6 +911,10 @@ func invoke(ctx context.Context) {
 
 	if cleanUpBillingSinks {
 		removeBillingSinks(billingAccount)
+	}
+
+	if cleanUpStaleAccessLevels {
+		cleanStaleAccessLevels()
 	}
 }
 

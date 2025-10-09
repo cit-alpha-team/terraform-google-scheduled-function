@@ -1,6 +1,13 @@
 # Old Project Cleanup Utility Module
 
-This module schedules a job to clean up GCP projects older than a specified length of time, that match a particular labels. This job runs every 5 minutes via Google Cloud Scheduled Functions. Please see the [utility's readme](./function_source/README.md) for more information as to its operation and configuration.
+This module schedules a job to clean up GCP resources based on specific criteria, running every 5 minutes via Google Cloud Scheduled Functions. Its main capabilities include:
+
+* **Project Deletion:** Deletes GCP projects that are older than a specified age and match a particular set of labels.
+* **Organization-Level Cleanup:** Cleans up organization-level resources that are no longer in use, such as Tag Keys, Security Command Center notifications, and Cloud Asset Inventory feeds.
+* **Billing Sink Cleanup:** Removes Billing Account Log Sinks that match certain criteria.
+* **Stale Access Level Cleanup:** Deletes Access Levels that are unused (not part of any Service Perimeter) or have no members.
+
+For more details on its operation and configuration, please see the [function's readme](./function_source/README.md).
 
 ## Requirements
 
@@ -20,17 +27,21 @@ The following services must be enabled on the project housing the cleanup functi
 - Cloud Asset API (`cloudasset.googleapis.com`)
 - Security Command Center API (`securitycenter.googleapis.com`)
 - Cloud Logging API (`logging.googleapis.com`)
+- Access Context Manager API (`accesscontextmanager.googleapis.com`)
 
 <!-- BEGINNING OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| access\_policy\_name | The name of the Access Policy to clean resources from. | `string` | `""` | no |
 | billing\_account | Billing Account used to provision resources. | `string` | `""` | no |
 | clean\_up\_billing\_sinks | Clean up Billing Account Sinks. | `bool` | `false` | no |
 | clean\_up\_org\_level\_cai\_feeds | Clean up organization level Cloud Asset Inventory Feeds. | `bool` | `false` | no |
 | clean\_up\_org\_level\_scc\_notifications | Clean up organization level Security Command Center notifications. | `bool` | `false` | no |
 | clean\_up\_org\_level\_tag\_keys | Clean up organization level Tag Keys. | `bool` | `false` | no |
+| clean_up_stale_access_levels | If true, the function will clean up stale Access Levels based on their configuration and usage. | `bool` | `false` | no |
+| dry\_run | If true, the cleanup function will only log what it would delete without performing deletions. | `bool` | `true` | no |
 | function\_docker\_registry | Docker Registry to use for storing the function's Docker images. Allowed values are CONTAINER\_REGISTRY (default) and ARTIFACT\_REGISTRY. | `string` | `null` | no |
 | function\_timeout\_s | The amount of time in seconds allotted for the execution of the function. | `number` | `500` | no |
 | job\_schedule | Cleaner function run frequency, in cron syntax | `string` | `"*/5 * * * *"` | no |
