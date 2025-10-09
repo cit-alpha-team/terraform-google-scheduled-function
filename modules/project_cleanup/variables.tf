@@ -71,9 +71,9 @@ variable "target_tag_value" {
   default     = ""
 }
 
-variable "max_project_age_in_hours" {
+variable "max_resource_age_in_hours" {
   type        = number
-  description = "The maximum number of hours that a GCP project, selected by `target_tag_name` and `target_tag_value`, can exist"
+  description = "The maximum age in hours that a resource (e.g., project, folder, perimeter) can exist before being considered for cleanup."
   default     = 6
 }
 
@@ -154,3 +154,36 @@ variable "function_docker_registry" {
   default     = null
   description = "Docker Registry to use for storing the function's Docker images. Allowed values are CONTAINER_REGISTRY (default) and ARTIFACT_REGISTRY."
 }
+
+variable "dry_run" {
+  description = "If true, the cleanup function will only log what it would delete without performing deletions."
+  type        = bool
+  default     = true
+}
+
+variable "clean_up_empty_perimeters" {
+  description = "If true, the function will clean up empty or obsolete Service Perimeters."
+  type        = bool
+  default     = false
+}
+
+variable "access_policy_name" {
+  description = "The name of the Access Policy to clean resources from, in the format 'accessPolicies/123456789'."
+  type        = string
+  default     = ""
+}
+
+variable "perimeter_cleanup_flags" {
+  description = "A list of string flags used to identify test perimeters for cleanup. The function will look for these flags in the perimeter's description field."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for flag in var.perimeter_cleanup_flags : length(regexall("_", flag)) == 0
+    ])
+    error_message = "Flags in perimeter_cleanup_flags must not contain the '_' (underscore) character."
+  }
+}
+
+

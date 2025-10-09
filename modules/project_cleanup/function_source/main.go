@@ -35,6 +35,7 @@ import (
 	"cloud.google.com/go/securitycenter/apiv1/securitycenterpb"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/accesscontextmanager/v1"
 	"google.golang.org/api/cloudresourcemanager/v1"
 	cloudresourcemanager2 "google.golang.org/api/cloudresourcemanager/v2"
 	cloudresourcemanager3 "google.golang.org/api/cloudresourcemanager/v3"
@@ -56,7 +57,7 @@ const (
 	TargetIncludedSCCNotfis       = "TARGET_INCLUDED_SCC_NOTIFICATIONS"
 	TargetFolderId                = "TARGET_FOLDER_ID"
 	TargetOrganizationId          = "TARGET_ORGANIZATION_ID"
-	MaxProjectAgeHours            = "MAX_PROJECT_AGE_HOURS"
+	MaxResourceAgeHours           = "MAX_RESOURCE_AGE_HOURS"
 	targetFolderRegexp            = `^[0-9]+$`
 	targetOrganizationRegexp      = `^[0-9]+$`
 	billingAccountRegex           = `^[0-9A-Z][-0-9A-Z]{18}[0-9A-Z]$`
@@ -67,6 +68,10 @@ const (
 	CleanUpBillingSinks           = "CLEAN_UP_BILLING_SINKS"
 	TargetBillingSinks            = "TARGET_BILLING_SINKS"
 	BillingSinksPageSize          = "BILLING_SINKS_PAGE_SIZE"
+	DryRunMode                    = "DRY_RUN"
+	CleanUpEmptyPerimeters        = "CLEAN_UP_EMPTY_PERIMETERS"
+	AccessPolicyName              = "ACCESS_POLICY_NAME"
+	PerimeterCleanupFlags         = "PERIMETER_CLEANUP_FLAGS"
 )
 
 var (
@@ -77,7 +82,7 @@ var (
 	cleanUpSCCNotfi        = getBoolFromEnv(CleanUpSCCNotfi)
 	excludedTagKeysList    = getTagKeysListFromEnv(TargetExcludedTagKeys)
 	includedSCCNotfisList  = getRegexListFromEnv(TargetIncludedSCCNotfis)
-	resourceCreationCutoff = getOldTime(getIntFromEnv(MaxProjectAgeHours) * 60 * 60)
+	resourceCreationCutoff = getOldTime(getIntFromEnv(MaxResourceAgeHours) * 60 * 60)
 	rootFolderId           = getCorrectFolderIdOrTerminateExecution()
 	organizationId         = getCorrectOrganizationIdOrTerminateExecution()
 	sccPageSize            = int32(getIntFromEnv(SCCNotificationsPageSize))
@@ -87,6 +92,10 @@ var (
 	cleanUpBillingSinks    = getBoolFromEnv(CleanUpBillingSinks)
 	billingSinksPageSize   = getIntFromEnv(BillingSinksPageSize)
 	targetBillingSinks     = getRegexListFromEnv(TargetBillingSinks)
+	isDryRun               = getBoolFromEnv(DryRunMode)
+	cleanUpEmptyPerimeters = getBoolFromEnv(CleanUpEmptyPerimeters)
+	accessPolicyName       = getAccessPolicyNameOrTerminateExecution()
+	perimeterCleanupFlags  = getListFromEnv(PerimeterCleanupFlags)
 )
 
 type PubSubMessage struct {
@@ -423,6 +432,54 @@ func getFirewallPoliciesServiceOrTerminateExecution(ctx context.Context, client 
 	return computeService.FirewallPolicies
 }
 
+func getAccessPolicyNameOrTerminateExecution() string {
+	if !getBoolFromEnv(CleanUpEmptyPerimeters) {
+		return ""
+	}
+	policyName := os.Getenv(AccessPolicyName)
+	if policyName == "" {
+		logger.Fatalf("If Service Perimeter cleanup is enabled, Access Policy Name variable [%s] must be set.", AccessPolicyName)
+	}
+	return policyName
+}
+
+func getAccessContextManagerServiceOrTerminateExecution(ctx context.Context, client *http.Client) *accesscontextmanager.Service {
+	logger.Println("Try to get Access Context Manager Service")
+	service, err := accesscontextmanager.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		logger.Fatalf("Failed to get Access Context Manager Service with error [%s], terminate execution", err.Error())
+	}
+	logger.Println("Got Access Context Manager Service")
+	return service
+}
+
+func getProjectsV3ServiceOrTerminateExecution(ctx context.Context, client *http.Client) *cloudresourcemanager3.ProjectsService {
+	logger.Println("Try to get Cloud Resource Manager v3 Projects Service")
+	crmService, err := cloudresourcemanager3.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		logger.Fatalf("Failed to get Cloud Resource Manager v3 Service with error [%s], terminate execution", err.Error())
+	}
+	logger.Println("Got Cloud Resource Manager v3 Projects Service")
+	return crmService.Projects
+}
+
+func getListFromEnv(envVariableName string) []string {
+	envVar := os.Getenv(envVariableName)
+	logger.Printf("Try to get list from [%s]", envVariableName)
+	if envVar == "" {
+		logger.Printf("No value for [%s] list provided.", envVariableName)
+		return nil
+	}
+	var stringList []string
+	err := json.Unmarshal([]byte(envVar), &stringList)
+	if err != nil {
+		logger.Printf("Failed to get list from [%s] env variable, error [%s]", envVariableName, err.Error())
+	} else {
+		logger.Printf("Got list [%s] from [%s] env variable", stringList, envVariableName)
+	}
+	return stringList
+}
+
 func initializeGoogleClient(ctx context.Context) *http.Client {
 	logger.Println("Try to initialize Google client")
 	client, err := google.DefaultClient(ctx, cloudresourcemanager.CloudPlatformScope)
@@ -445,6 +502,8 @@ func invoke(ctx context.Context) {
 	firewallPoliciesService := getFirewallPoliciesServiceOrTerminateExecution(ctx, client)
 	endpointService := getServiceManagementServiceOrTerminateExecution(ctx, client)
 	containerService := getContainerServiceOrTerminateExecution(ctx)
+	accessContextManagerService := getAccessContextManagerServiceOrTerminateExecution(ctx, client)
+	projectsV3Service := getProjectsV3ServiceOrTerminateExecution(ctx, client)
 
 	removeLien := func(name string) {
 		logger.Printf("Try to remove lien [%s]", name)
@@ -787,6 +846,88 @@ func invoke(ctx context.Context) {
 		getSubFoldersAndRemoveProjectsFoldersRecursively(rootFolder, getSubFoldersAndRemoveProjectsFoldersRecursively)
 	}
 
+	resourcesDoNotExist := func(resources []string) bool {
+		if len(resources) == 0 {
+			return true
+		}
+		var queryParts []string
+		for _, resource := range resources {
+			parts := strings.Split(resource, "/")
+			if len(parts) == 2 && parts[0] == "projects" {
+				projectNumber := parts[1]
+				queryParts = append(queryParts, fmt.Sprintf("(projectNumber=%s AND state=ACTIVE)", projectNumber))
+			}
+		}
+		if len(queryParts) == 0 {
+			return true
+		}
+		query := strings.Join(queryParts, " OR ")
+
+		resp, err := projectsV3Service.Search().Query(query).Do()
+
+		if err != nil {
+			logger.Printf("Failed to search for projects with query [%s], assuming they exist to be safe. Error: %v", query, err)
+			return false
+		}
+		return len(resp.Projects) == 0
+	}
+
+	cleanEmptyPerimeters := func() {
+		logger.Println("Starting cleanup of empty Service Perimeters")
+		perimeters, err := accessContextManagerService.AccessPolicies.ServicePerimeters.List("accessPolicies/" + accessPolicyName).Do()
+		if err != nil {
+			logger.Printf("Failed to list Service Perimeters: %v", err)
+			return
+		}
+		for _, perimeter := range perimeters.ServicePerimeters {
+			if perimeter.PerimeterType == "PERIMETER_TYPE_BRIDGE" {
+				continue
+			}
+			var matchedFlag string
+			for _, flag := range perimeterCleanupFlags {
+				if strings.HasPrefix(perimeter.Description, flag+"_") {
+					matchedFlag = flag
+					break
+				}
+			}
+			if matchedFlag == "" {
+				logger.Printf("Perimeter [%s] does not have a cleanup flag in its description, skipping.", perimeter.Name)
+				continue
+			}
+			timestampStr := strings.TrimPrefix(perimeter.Description, matchedFlag+"_")
+			perimeterCreatedAt, err := time.Parse(time.RFC3339, timestampStr)
+			if err != nil {
+				logger.Printf("Failed to parse timestamp from description for perimeter [%s], skipping. Error: %v", perimeter.Name, err)
+				continue
+			}
+			if !perimeterCreatedAt.Before(resourceCreationCutoff) {
+				logger.Printf("Perimeter [%s] is targeted for cleanup but is not older than MAX_RESOURCE_AGE_HOURS, skipping.", perimeter.Name)
+				logger.Printf("Perimeter age found: [%s] .", perimeterCreatedAt)
+				continue
+			}
+			status := perimeter.Status
+			spec := perimeter.Spec
+			statusIsEmpty := status == nil || (len(status.AccessLevels) == 0 && len(status.Resources) == 0)
+			specIsEmpty := spec == nil || (len(spec.AccessLevels) == 0 && len(spec.Resources) == 0)
+			statusResourcesGone := status != nil && resourcesDoNotExist(status.Resources)
+			specResourcesGone := spec != nil && resourcesDoNotExist(spec.Resources)
+
+			if (statusIsEmpty || statusResourcesGone) && (specIsEmpty || specResourcesGone) {
+				logger.Printf("Perimeter [%s] is targeted, old enough, and empty. Considering for deletion.", perimeter.Name)
+				if isDryRun {
+					logger.Printf("[DRY RUN] Would delete Service Perimeter [%s]", perimeter.Name)
+				} else {
+					_, err := accessContextManagerService.AccessPolicies.ServicePerimeters.Delete(perimeter.Name).Do()
+					if err != nil {
+						logger.Printf("Error deleting Service Perimeter [%s]: %v", perimeter.Name, err)
+					} else {
+						logger.Printf("Successfully deleted Service Perimeter [%s]", perimeter.Name)
+					}
+				}
+			}
+		}
+	}
+
 	// Only Tag Keys whose values are not in use can be deleted.
 	if cleanUpTagKeys {
 		removeTagKeys(organizationId)
@@ -804,6 +945,10 @@ func invoke(ctx context.Context) {
 
 	if cleanUpBillingSinks {
 		removeBillingSinks(billingAccount)
+	}
+
+	if cleanUpEmptyPerimeters {
+		cleanEmptyPerimeters()
 	}
 }
 

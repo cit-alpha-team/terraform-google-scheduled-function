@@ -37,6 +37,7 @@ resource "google_organization_iam_member" "main" {
     "roles/cloudasset.owner",
     "roles/securitycenter.notificationConfigEditor",
     "roles/logging.configWriter",
+    "roles/accesscontextmanager.policyEditor",
   ])
 
   member = "serviceAccount:${google_service_account.project_cleaner_function.email}"
@@ -55,7 +56,7 @@ module "scheduled_project_cleaner" {
   region                         = var.region
   topic_name                     = var.topic_name
   function_available_memory_mb   = 128
-  function_description           = "Clean up GCP projects older than ${var.max_project_age_in_hours} hours matching particular tags"
+  function_description           = "Clean up GCP projects older than ${var.max_resource_age_in_hours} hours matching particular tags"
   function_runtime               = "go121"
   function_service_account_email = google_service_account.project_cleaner_function.email
   function_timeout_s             = var.function_timeout_s
@@ -66,7 +67,7 @@ module "scheduled_project_cleaner" {
     TARGET_FOLDER_ID                  = var.target_folder_id
     TARGET_EXCLUDED_LABELS            = jsonencode(var.target_excluded_labels)
     TARGET_INCLUDED_LABELS            = jsonencode(local.target_included_labels)
-    MAX_PROJECT_AGE_HOURS             = var.max_project_age_in_hours
+    MAX_RESOURCE_AGE_HOURS            = var.max_resource_age_in_hours
     CLEAN_UP_TAG_KEYS                 = var.clean_up_org_level_tag_keys
     TARGET_EXCLUDED_TAGKEYS           = jsonencode(var.target_excluded_tagkeys)
     CLEAN_UP_SCC_NOTIFICATIONS        = var.clean_up_org_level_scc_notifications
@@ -78,5 +79,9 @@ module "scheduled_project_cleaner" {
     CLEAN_UP_BILLING_SINKS            = var.clean_up_billing_sinks
     TARGET_BILLING_SINKS              = jsonencode(var.target_billing_sinks)
     BILLING_SINKS_PAGE_SIZE           = var.list_billing_sinks_page_size
+    DRY_RUN                           = var.dry_run
+    CLEAN_UP_EMPTY_PERIMETERS         = var.clean_up_empty_perimeters
+    ACCESS_POLICY_NAME                = var.access_policy_name
+    PERIMETER_CLEANUP_FLAGS           = jsonencode(var.perimeter_cleanup_flags)
   }
 }
