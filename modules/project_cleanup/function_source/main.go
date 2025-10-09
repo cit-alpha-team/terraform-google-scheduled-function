@@ -71,7 +71,7 @@ const (
 	DryRunMode                    = "DRY_RUN"
 	CleanUpEmptyPerimeters        = "CLEAN_UP_EMPTY_PERIMETERS"
 	AccessPolicyName              = "ACCESS_POLICY_NAME"
-	PERIMETER_CLEANUP_FLAGS       = "PERIMETER_CLEANUP_FLAGS"
+	PerimeterCleanupFlags         = "PERIMETER_CLEANUP_FLAGS"
 )
 
 var (
@@ -95,7 +95,7 @@ var (
 	isDryRun               = getBoolFromEnv(DryRunMode)
 	cleanUpEmptyPerimeters = getBoolFromEnv(CleanUpEmptyPerimeters)
 	accessPolicyName       = getAccessPolicyNameOrTerminateExecution()
-	perimeterCleanupFlags  = getListFromEnv(PERIMETER_CLEANUP_FLAGS)
+	perimeterCleanupFlags  = getListFromEnv(PerimeterCleanupFlags)
 )
 
 type PubSubMessage struct {
