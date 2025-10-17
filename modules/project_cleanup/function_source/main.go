@@ -67,6 +67,8 @@ const (
 	CleanUpBillingSinks           = "CLEAN_UP_BILLING_SINKS"
 	TargetBillingSinks            = "TARGET_BILLING_SINKS"
 	BillingSinksPageSize          = "BILLING_SINKS_PAGE_SIZE"
+	DryRunMode                    = "DRY_RUN"
+	TargetExcludedFolders         = "TARGET_EXCLUDED_FOLDERS"
 )
 
 var (
@@ -87,6 +89,8 @@ var (
 	cleanUpBillingSinks    = getBoolFromEnv(CleanUpBillingSinks)
 	billingSinksPageSize   = getIntFromEnv(BillingSinksPageSize)
 	targetBillingSinks     = getRegexListFromEnv(TargetBillingSinks)
+	isDryRun               = getBoolFromEnv(DryRunMode)
+	excludedFoldersMap     = getListFromEnvAsMap(TargetExcludedFolders)
 )
 
 type PubSubMessage struct {
@@ -423,6 +427,26 @@ func getFirewallPoliciesServiceOrTerminateExecution(ctx context.Context, client 
 	return computeService.FirewallPolicies
 }
 
+func getListFromEnvAsMap(envVariableName string) map[string]bool {
+	envVar := os.Getenv(envVariableName)
+	listAsMap := make(map[string]bool)
+	if envVar == "" {
+		logger.Printf("No values provided for %s.", envVariableName)
+		return listAsMap
+	}
+	var stringList []string
+	err := json.Unmarshal([]byte(envVar), &stringList)
+	if err != nil {
+		logger.Printf("Failed to get list from [%s] env variable, error [%s]", envVariableName, err.Error())
+		return listAsMap
+	}
+	for _, item := range stringList {
+		listAsMap["folders/"+item] = true
+	}
+	logger.Printf("Loaded %d excluded folders from %s.", len(listAsMap), envVariableName)
+	return listAsMap
+}
+
 func initializeGoogleClient(ctx context.Context) *http.Client {
 	logger.Println("Try to initialize Google client")
 	client, err := google.DefaultClient(ctx, cloudresourcemanager.CloudPlatformScope)
@@ -620,6 +644,10 @@ func invoke(ctx context.Context) {
 	}
 
 	removeProjectById := func(projectId string) error {
+		if isDryRun {
+			logger.Printf("[DRY RUN] Would request deletion for project: %s", projectId)
+			return nil
+		}
 		_, err := cloudResourceManagerService.Projects.Delete(projectId).Context(ctx).Do()
 		return err
 	}
@@ -754,6 +782,10 @@ func invoke(ctx context.Context) {
 		folderId := folder.Name
 		removeFirewallPolicies(folderId)
 		logger.Printf("Try to delete folder with id [%s]", folderId)
+		if isDryRun {
+			logger.Printf("[DRY RUN] Would delete folder with ID: %s", folderId)
+			return
+		}
 		_, err := folderService.Delete(folderId).Do()
 		if err != nil {
 			logger.Printf("Failed to delete folder [%s], error [%s]", folderId, err.Error())
@@ -764,6 +796,10 @@ func invoke(ctx context.Context) {
 
 	getSubFoldersAndRemoveProjectsFoldersRecursively := func(folder *cloudresourcemanager2.Folder, recursion FolderRecursion) {
 		folderId := folder.Name
+		if excludedFoldersMap[folderId] {
+			logger.Printf("Skipping folder [%s] as it is in the exclusion list.", folderId)
+			return
+		}
 		listFoldersRequest := folderService.List().Parent(folderId).ShowDeleted(false)
 		if err := listFoldersRequest.Pages(ctx, func(foldersResponse *cloudresourcemanager2.ListFoldersResponse) error {
 			for _, folder := range foldersResponse.Folders {

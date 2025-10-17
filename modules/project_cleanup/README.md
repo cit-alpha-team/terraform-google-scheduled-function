@@ -31,6 +31,7 @@ The following services must be enabled on the project housing the cleanup functi
 | clean\_up\_org\_level\_cai\_feeds | Clean up organization level Cloud Asset Inventory Feeds. | `bool` | `false` | no |
 | clean\_up\_org\_level\_scc\_notifications | Clean up organization level Security Command Center notifications. | `bool` | `false` | no |
 | clean\_up\_org\_level\_tag\_keys | Clean up organization level Tag Keys. | `bool` | `false` | no |
+| dry\_run | If set to true, the function will only log the actions it would take without performing any deletions. | `bool` | `true` | no |
 | function\_docker\_registry | Docker Registry to use for storing the function's Docker images. Allowed values are CONTAINER\_REGISTRY (default) and ARTIFACT\_REGISTRY. | `string` | `null` | no |
 | function\_timeout\_s | The amount of time in seconds allotted for the execution of the function. | `number` | `500` | no |
 | job\_schedule | Cleaner function run frequency, in cron syntax | `string` | `"*/5 * * * *"` | no |
@@ -41,6 +42,7 @@ The following services must be enabled on the project housing the cleanup functi
 | project\_id | The project ID to host the scheduled function in | `string` | n/a | yes |
 | region | The region the project is in (App Engine specific) | `string` | n/a | yes |
 | target\_billing\_sinks | List of Billing Account Log Sinks names regex that will be deleted. Regex example: `.*/sinks/sk-c-logging-.*-billing-.*` | `list(string)` | `[]` | no |
+| target\_excluded\_folders | List of folder IDs (e.g., '1234567890') to exclude from the entire cleanup process. | `list(string)` | `[]` | no |
 | target\_excluded\_labels | Map of project lablels that won't be deleted. | `map(string)` | `{}` | no |
 | target\_excluded\_tagkeys | List of organization Tag Key short names that won't be deleted. | `list(string)` | `[]` | no |
 | target\_folder\_id | Folder ID to delete all projects under. | `string` | `""` | no |
@@ -50,7 +52,6 @@ The following services must be enabled on the project housing the cleanup functi
 | target\_tag\_name | The name of a tag to filter GCP projects on for consideration by the cleanup utility (legacy, use `target_included_labels` map instead). | `string` | `""` | no |
 | target\_tag\_value | The value of a tag to filter GCP projects on for consideration by the cleanup utility (legacy, use `target_included_labels` map instead). | `string` | `""` | no |
 | topic\_name | Name of pubsub topic connecting the scheduled projects cleanup function | `string` | `"pubsub_scheduled_project_cleaner"` | no |
-
 ## Outputs
 
 | Name | Description |
