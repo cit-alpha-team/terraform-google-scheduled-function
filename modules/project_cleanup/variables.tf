@@ -162,7 +162,7 @@ variable "dry_run" {
 }
 variable "target_excluded_folders" {
   description = "List of folder IDs (e.g., '1234567890') to exclude from the entire cleanup process."
-  type        = list(string)
+  type        = set(string)
   default     = []
 }
 
